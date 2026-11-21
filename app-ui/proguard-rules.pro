@@ -1,0 +1,5 @@
+-keep class com.rasp.detect.** { *; }
+-keepclassmembers class com.rasp.detect.** { *; }
+-keep class com.rasp.detect.ui.MainActivity { *; }
+-keepattributes *Annotation*
+-dontwarn org.jetbrains.annotations.**

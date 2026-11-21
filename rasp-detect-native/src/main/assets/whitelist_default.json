@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "version": 3,
+  "note": "白名单模板：运行时动态加载。匹配规则——片段与检测项 ID 完全相等时显式豁免；否则片段需长度 >= 10、不以 / 开头、且不是通用进程名；强证据还要求片段足够具体（>= 14 字节且含 = 、. 或 ' on '）。片段之间用分号在 native 内部分隔，因此 'overlay on /system_ext' 这类多词条目会被完整保留。",
+  "mountPaths": [
+    "/system",
+    "/system_ext",
+    "/vendor",
+    "/product",
+    "/odm",
+    "/apex",
+    "/data",
+    "/data/app",
+    "/data/user",
+    "/data/media",
+    "/dev",
+    "/proc",
+    "/sys",
+    "/mnt",
+    "/storage",
+    "/metadata",
+    "/debug_ramdisk"
+  ],
+  "mounts": [
+    "overlay on /system_ext",
+    "tmpfs on /apex",
+    "tmpfs on /dev/__properties__",
+    "proc on /proc",
+    "sysfs on /sys"
+  ],
+  "processes": [
+    "com.android.systemui",
+    "com.android.phone",
+    "com.android.settings",
+    "com.android.permissioncontroller",
+    "com.android.providers.media",
+    "android.hardware."
+  ],
+  "properties": [
+    "ro.build.tags=release-keys",
+    "ro.build.type=user",
+    "ro.boot.verifiedbootstate=green",
+    "ro.boot.flash.locked=1",
+    "ro.boot.vbmeta.device_state=locked",
+    "ro.boot.veritymode=enforcing",
+    "ro.product.cpu.abilist"
+  ],
+  "kernel": [
+    "CONFIG_KSU=n",
+    "ro.kernel.version="
+  ],
+  "oem": [
+    "ro.product.brand=Clore",
+    "ro.product.manufacturer=Clore",
+    "ro.build.display.id=CloreOS",
+    "ro.cloreos.",
+    "persist.sys.cloreos.",
+    "ro.vendor.build.fingerprint"
+  ]
+}

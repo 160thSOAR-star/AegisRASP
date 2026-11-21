@@ -1,0 +1,22 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+.tools/
+*.hprof
+/app-ui/build
+/rasp-detect-native/build
+
+# 签名私钥与口令文件：绝对不能入库（见 docs/06 §6）
+keystore/*.jks
+keystore/keystore.properties
+
+# 交付产物：APK 走 GitHub Release 附件，不进仓库历史
+/dist/
+*.apk

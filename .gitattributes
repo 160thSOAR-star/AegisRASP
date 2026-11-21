@@ -1,0 +1,22 @@
+# 统一换行符，避免 Windows 开发者把 CRLF 提交上去后脚本在某平台上失效
+* text=auto eol=lf
+
+# Windows 批处理必须 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 脚本必须 LF（gradlew 是 shell 脚本，CRLF 会导致 "bad interpreter"）
+gradlew text eol=lf
+*.sh text eol=lf
+*.properties text eol=lf
+
+# 二进制文件不做换行转换
+*.jar binary
+*.jks binary
+*.keystore binary
+*.apk binary
+*.aab binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.so binary

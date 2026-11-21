@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RASP 检测核心库：无 Activity / 无前台服务 / 不申请任何敏感权限 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
