@@ -2,18 +2,17 @@
 
 > 本表按"你要找什么"组织。路径相对工程根目录 `E:\安卓检测项目`。
 > 行数为实际统计（2026-11-21），`—` 表示二进制/无需统计。
-> 本索引对应**开源仓库内容**：`dist/`（APK）与 `keystore/`（私钥）不入库，见 `.gitignore`。
 
 ## 0. 一眼看懂
 
 | 项 | 值 |
 | --- | --- |
-| 当前版本 | **1.0.1**（versionCode **3**），由 1.0.1-rc 转正 |
-| 当前交付 APK | `dist/AegisRASP-1.0.1-release.apk`（2,414,555 B，SHA-256 `B98ACACE…38D4B984`） |
-| 包名 / ABI / SDK | `com.rasp.detect.aegis` / arm64-v8a、x86_64 / minSdk 30、targetSdk 35 |
+| 当前版本 | **2.0.0-beta**（versionCode **6**，targetSdk 36；可信度/工程纪律版，检测行为未变） |
+| 当前交付 APK | `dist/AegisRASP-2.0.0-beta-release.apk`（2,430,987 B，SHA-256 `CCFA3A26…C0A25954`） |
+| 包名 / ABI / SDK | `com.rasp.detect.aegis` / arm64-v8a、x86_64 / minSdk 30、targetSdk 36 |
 | 检测项 | 51 项（20 强 / 25 间接 / 6 弱） |
-| 源文件 | 79 个（不含 build 产物与工具链），约 9.9k 行代码 + 2.6k 行文档 |
-| 签名 | 同一密钥：证书 SHA-256 `93:1E:E6:…:DF:C5:AB`（1.0.0 / 1.0.1-rc / 1.0.1 可互相覆盖升级） |
+| native 对齐 | 16 KB 页（全部 `LOAD` 段 `Align=0x4000`） |
+| 签名 | 同一密钥：证书 SHA-256 `93:1E:E6:…:DF:C5:AB`（1.0.0 → 2.0.0-beta 全系可互相覆盖升级） |
 
 ---
 
@@ -21,11 +20,14 @@
 
 | 文件 | 大小 | SHA-256（前缀） | 用途 |
 | --- | --- | --- | --- |
-| `AegisRASP-1.0.1-release.apk` | 2,414,555 B | `B98ACACE…38D4B984` | **当前交付**（versionCode 3） |
-| `AegisRASP-1.0.1-rc-release.apk` | 2,414,559 B | `4D393C63…01A2D706` | 候选版（versionCode 2），回溯对比用 |
-| `AegisRASP-1.0.0-release.apk` | 2,349,019 B | `41A6C95C…587F45AF` | 首版（41 项，versionCode 1） |
+| `AegisRASP-2.0.0-beta-release.apk` | 2,430,987 B | `CCFA3A26…C0A25954` | **当前交付**（versionCode 6，v2.0.0-beta） |
+| `AegisRASP-1.0.3-release.apk` | 2,430,987 B | `8C5B948E…3839D54` | 1.0.3（v5，闪退加固 + 阶段诊断） |
+| `AegisRASP-1.0.2-release.apk` | 2,398,219 B | `EB92F1D4…F8C0D1DE8` | 1.0.2（v4，targetSdk 36） |
+| `AegisRASP-1.0.1-release.apk` | 2,414,555 B | `B98ACACE…38D4B984` | 1.0.1 正式版（v3） |
+| `AegisRASP-1.0.1-rc-release.apk` | 2,414,559 B | `4D393C63…01A2D706` | 候选版（v2） |
+| `AegisRASP-1.0.0-release.apk` | 2,349,019 B | `41A6C95C…587F45AF` | 首版（v1，41 项） |
 
-> 三份 APK 同一签名。安装：`adb install -r dist\AegisRASP-1.0.1-release.apk`
+> 所有 APK 同一签名。安装：`adb install -r dist\AegisRASP-2.0.0-beta-release.apk`
 
 ---
 
@@ -37,8 +39,10 @@
 | --- | --- | --- |
 | `README.md` | 204 | 总览：产物、界面结构、架构、构建、打分模型、使用、更新日志、限制 |
 | `CHANGELOG.md` | 120 | **版本变更唯一权威记录** + 发版检查清单 |
-| `HANDOVER.md` | 207 | 交接说明：状态、设计思路、9 类踩坑点、禁止事项、开工命令 |
+| `HANDOVER.md` | 257 | 交接说明：状态、设计思路、9 类踩坑点、版本纪律、禁止事项、开工命令 |
+| `HANDOVER-2.0.0-beta.md` | 375 | **本次会话交接补充**：当前状态、事件时间线、10 条注意事项、交接清单、项目与维护者评价 |
 | `INDEX.md` | 本文件 | 文件目录索引 |
+| `ROADMAP.md` | 173 | 发展规划：版本路线、技术债、KPI、风险登记 |
 
 ### 2.2 `docs/`
 
@@ -178,13 +182,26 @@
 
 | 路径 | 说明 |
 | --- | --- |
-| `keystore/aegis-release.jks` | 签名私钥（PKCS12，别名 `aegis`，**不入库**；口令从本地 `keystore/keystore.properties` 读取） |
-| `<Android SDK 目录>` | SDK：platform-35、build-tools 35.0.0、NDK 27.1.12297006、platform-tools 37.0.1 |
-| `<ASCII 联接目录>`（如 `C:\aegis-build`） | 指向本工程的 ASCII 目录联接，用于规避中文路径工具问题（构建时 `cd` 到这里） |
+| `keystore/aegis-release.jks` | 签名私钥（PKCS12，别名 `aegis`）；**不入库**，口令由本地 `keystore/keystore.properties` 提供（文件 SHA-256 `375A021F…915403`） |
+| `.tools/gradle-8.9/` | 本机 Gradle 8.9（wrapper 也可用；`.tools` 另含 ~1.3 GB 下载缓存） |
+| `C:\Users\Administrator\AppData\Local\Android\Sdk` | SDK：platform-35、build-tools 35.0.0、NDK 27.1.12297006、platform-tools 37.0.1 |
+| `E:\aegis-build` | 指向本工程的 ASCII 目录联接，用于规避中文路径工具问题（构建时 `cd` 到这里） |
 
 ---
 
-## 9. 常见改动 → 需要动哪些文件
+## 9. 外部备份
+
+| 路径 | 状态 |
+| --- | --- |
+| `D:\源码与备份\AegisRASP-1.0.1-rc\` | 2 代源码快照（77 文件 / 5.2 MB，versionCode 2、targetSdk 35） |
+| `D:\源码与备份\AegisRASP-1.0.2\` | 4 代源码快照（82 文件 / 9.88 MB，versionCode 4、targetSdk 36） |
+| `D:\源码与备份\AegisRASP-1.0.3\` | 5 代源码快照（85 文件 / 12.22 MB，versionCode 5、targetSdk 36，即当前代） |
+| `D:\源码与备份\README.md` | 备份索引：代际对应、哈希、重建步骤、安全提醒 |
+| 加密移动设备 | 用户已把 C 盘备份迁出，本机不再保证存在 |
+
+---
+
+## 10. 常见改动 → 需要动哪些文件
 
 | 任务 | 必改 | 别忘了 |
 | --- | --- | --- |
@@ -196,8 +213,11 @@
 
 ---
 
-## 10. 版本状态说明（重要）
+## 11. 版本状态说明（重要）
 
-- 源码、`CHANGELOG.md`、`README.md`、`HANDOVER.md`、`docs/05`、`docs/06`、`AboutScreen.kt` 均为 **1.0.1 / versionCode 3**，状态一致。
-- 1.0.1 是 1.0.1-rc **转正**：检测逻辑（51 项、判据、白名单 v3、权重、预算）完全一致，差异只有 `versionName` 与应用内日志文案。
+- 源码、`CHANGELOG.md`、`README.md`、`HANDOVER.md`、`HANDOVER-2.0.0-beta.md`、`ROADMAP.md`、`docs/05`、`docs/06`、`AboutScreen.kt` 均为 **2.0.0-beta / versionCode 6 / targetSdk 36**，状态一致。
+- 1.0.3 相对 1.0.2：检测逻辑未变，改动集中在 **闪退修复**（系统调用兼容性探测、UTF-8 校验、沙箱等待修复）与 **崩溃诊断能力**（阶段埋点、兼容探测落盘、Java 崩溃落盘）。
+- **外部备份现状**：`D:\源码与备份\` 保存 2 代（1.0.1-rc）、4 代（1.0.2）、5 代（1.0.3）的完整源码快照，各一独立文件夹，并附 `manifests\*.sha256` 逐文件校验清单；
+  原 `C:\战争雷霆第三方\重要文件\` 下的 2 代快照已校验一致后迁移至 D 盘，C 盘原件已删除。
+  1 代（1.0.0）与 3 代（1.0.1）只保留 APK，源码未单独归档。
 - 上表行数为 2026-11-21 的一次性统计，文档更新后会小幅漂移；以实际文件为准。

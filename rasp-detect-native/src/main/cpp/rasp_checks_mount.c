@@ -456,6 +456,22 @@ void rasp_check_mount(rasp_ctx_t *c)
         snprintf(raw, sizeof(raw), "{\"errno\":%d,\"msg\":\"%s\"}", err, strerror(err));
         rasp_emit(c, "MNT-001", "挂载视图自洽性校验（statx mnt_id vs mountinfo）", "mount",
                   GRADE_STRONG, 0.0, 0, 0, raw, "cannot read /proc/self/mountinfo");
+        /* 依赖 mountinfo 的其余挂载类检测项显式标记为不可用，保持 51 项覆盖率可见 */
+        static const struct {
+            const char *id;
+            const char *name;
+        } dependent[] = {
+            {"MNT-002", "跨进程 mountinfo 结构比对（pidfd → init/system_server）"},
+            {"MNT-003", "同路径文件 stat 元信息跨视图比对"},
+            {"MNT-004", "匿名 overlay / tmpfs 覆盖系统分区痕迹"},
+            {"MNT-005", "挂载点 propagation 属性异常"},
+            {"MNT-006", "多路径读取一致性（mountinfo/mounts/raw+libc）"},
+        };
+        for (size_t i = 0; i < sizeof(dependent) / sizeof(dependent[0]); i++) {
+            rasp_grade_t g = (i == 0 || i == 1 || i == 2) ? GRADE_STRONG : GRADE_INDIRECT;
+            rasp_emit(c, dependent[i].id, dependent[i].name, "mount", g, 0.0, 0, 0, raw,
+                      "mountinfo unavailable");
+        }
         return;
     }
 

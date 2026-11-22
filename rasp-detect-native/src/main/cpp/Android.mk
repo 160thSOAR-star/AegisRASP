@@ -7,6 +7,7 @@ LOCAL_SRC_FILES := \
     rasp_syscall.c \
     rasp_util.c \
     rasp_memory.c \
+    rasp_compat.c \
     rasp_sandbox.c \
     rasp_checks_mount.c \
     rasp_checks_ksu.c \

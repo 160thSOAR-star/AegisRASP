@@ -23,16 +23,16 @@ val hasReleaseSigning = keystorePropsFile.exists() && releaseKeystoreFile.exists
 
 android {
     namespace = "com.rasp.detect.ui"
-    compileSdk = 35
-    buildToolsVersion = "35.0.0"
+    compileSdk = 36
+    buildToolsVersion = "36.0.0"
     ndkVersion = "27.1.12297006"
 
     defaultConfig {
         applicationId = "com.rasp.detect.aegis"
         minSdk = 30
-        targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.1"
+        targetSdk = 36
+        versionCode = 6
+        versionName = "2.0.0-beta"
         resourceConfigurations += listOf("zh", "en")
         // 与 native 模块保持一致：只保留 64 位 ABI
         ndk {

@@ -49,6 +49,7 @@ class RaspEngine(private val context: Context) {
                     config.toJsonString(),
                     whitelistJson,
                     config.weightSpec(),
+                    context.filesDir.absolutePath,
                     sink
                 )
                 coroutineContext.ensureActive()

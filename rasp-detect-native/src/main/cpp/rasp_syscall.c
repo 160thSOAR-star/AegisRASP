@@ -48,6 +48,17 @@ long rasp_raw_read(int fd, void *buf, size_t count)
     return ret;
 }
 
+long rasp_raw_write(int fd, const void *buf, size_t count)
+{
+    if (buf == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    long ret = rasp_raw_syscall3(SYS_WRITE, fd, (long)buf, (long)count);
+    if (neg_to_errno(ret) != 0) return -1;
+    return ret;
+}
+
 int rasp_raw_close(int fd)
 {
     long ret = rasp_raw_syscall1(SYS_CLOSE, fd);
@@ -122,6 +133,18 @@ void *rasp_raw_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t o
         return (void *)-1;
     }
     return (void *)ret;
+}
+
+/* 释放共享页：探测/沙箱的 MAP_SHARED 匿名页必须收尾，否则每轮检测泄漏一页 */
+int rasp_raw_munmap(void *addr, size_t len)
+{
+    if (addr == NULL || addr == (void *)-1 || len == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    long ret = rasp_raw_syscall2(SYS_MUNMAP, (long)addr, (long)len);
+    if (neg_to_errno(ret) != 0) return -1;
+    return 0;
 }
 
 long rasp_raw_wait4(pid_t pid, int *status, int options, void *rusage)

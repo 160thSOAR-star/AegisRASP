@@ -1,6 +1,8 @@
 package com.rasp.detect.ui
 
 import android.app.Application
+import android.os.Process
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rasp.detect.Evidence
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * 检测状态与设置的唯一持有者。
@@ -36,6 +39,63 @@ class RaspViewModel(application: Application) : AndroidViewModel(application) {
 
     private var detectJob: Job? = null
     private var tickerJob: Job? = null
+
+    init {
+        installCrashHandler(application)
+        readLastRunDiagnostics(application)?.let { msg ->
+            _state.update { it.copy(diagnostic = msg) }
+        }
+    }
+
+    fun dismissDiagnostic() {
+        _state.update { it.copy(diagnostic = null) }
+    }
+
+    /**
+     * Java 层兜底：未捕获异常写入文件，下次启动可在首页看到原因。
+     * native 崩溃不会走这里，靠 native 的阶段埋点（last_stage）定位。
+     */
+    private fun installCrashHandler(app: Application) {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                File(app.filesDir, "last_crash.txt").writeText(
+                    "${thread.name}\n${Log.getStackTraceString(error)}"
+                )
+            }
+            if (previous != null) {
+                previous.uncaughtException(thread, error)
+            } else {
+                Process.killProcess(Process.myPid())
+            }
+        }
+    }
+
+    /** 读取上次检测的异常退出信息；读到后删除标记，避免重复提示。 */
+    private fun readLastRunDiagnostics(app: Application): String? {
+        val dir = app.filesDir
+        val crash = File(dir, "last_crash.txt")
+        if (crash.exists()) {
+            val text = runCatching { crash.readText() }.getOrNull().orEmpty()
+            runCatching { crash.delete() }
+            val head = text.lineSequence().filter { it.isNotBlank() }.take(6).joinToString("\n")
+            return "上次运行发生 Java 异常并退出：\n$head"
+        }
+
+        val stage = File(dir, "last_stage")
+        if (!stage.exists()) return null
+        val name = runCatching { stage.readText().trim() }.getOrDefault("")
+        runCatching { stage.delete() }
+        if (name.isEmpty() || name == "done") return null
+
+        val probe = File(dir, "compat_probe.txt")
+            .takeIf { it.exists() }
+            ?.let { runCatching { it.readText().trim() }.getOrNull() }
+            ?: "无"
+
+        return "上次检测在「$name」阶段异常退出（疑似 native 崩溃）。\n兼容性探测：$probe\n" +
+            "可用 fastMode 或关闭对应检测项后重试，并把该提示反馈给开发者。"
+    }
 
     fun startDetection() {
         if (_state.value.phase == DetectPhase.RUNNING) return

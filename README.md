@@ -1,35 +1,60 @@
-# Aegis RASP —— Android 15 / CloreOS15 KernelSU 本地运行时检测
+# Aegis RASP —— Android 15/16 / CloreOS15 KernelSU 本地运行时检测
 
-一套面向 **Android 15（API 35）** 的 KernelSU 隐藏环境**本地**检测方案：**51 个检测项**、纯非 Root 用户态执行、Native（C-bionic）核心 + Jetpack Compose Material3 仪表盘。
+一套面向 **Android 15–16（API 35–36）** 的 KernelSU 隐藏环境**本地**检测方案：**51 个检测项**、纯非 Root 用户态执行、Native（C-bionic）核心 + Jetpack Compose Material3 仪表盘。
 
-当前版本：**1.0.1**（versionCode 3）
+当前版本：**2.0.0-beta**（versionCode 6，compileSdk/targetSdk **36 / Android 16**）
+
+## 0. ⚠️ 验证状态（接手前必读）
+
+| 层面 | 状态 |
+| --- | --- |
+| 编译 / 链接 / 签名 / lint / 16 KB 对齐 | **已验证**（本机，每次发版都重新执行，见 `docs/05`） |
+| 静态判据一致性（代码 ↔ 文档） | **已验证**（2.0.0-beta 起有 `docs/01` §0.3 变更对照表） |
+| **真机运行** | **1.0.0–1.0.1 无任何记录；1.0.2 收到一条「Android 16 点检测即退出」的用户反馈，未附 `logcat` 与机型；1.0.3 的兼容探测 / UTF-8 / `clock_nanosleep` 加固属推断性修复，未复现确认；2.0.0-beta 未改变检测行为** |
+| 分数区间 / 阈值 / 耗时 | **全部为静态推算**，未与任何真机分布对标 |
+
+> 因此本 README 里出现的任何「区间」「典型值」「耗时」「已修复」，都只能当作**设计意图**，
+> 不能当作验收依据。真机基线套件与验收清单见 `ROADMAP.md` §1.1 与 `docs/04` §3。
+> 这一行是 2.0.0-beta 专门加的：此前 `HANDOVER` 说「从未上过真机」、`CHANGELOG` 说「修复了
+> Android 16 闪退」，同一批文档互相矛盾。
+
 
 - **只做痕迹检测与证据采集**：不实现任何绕过、攻击或修改 KernelSU / Root 环境的行为。
 - **全部本地**：不发起任何网络请求，不使用 SafetyNet / Play Integrity 等远程校验，Manifest 中未申请 `INTERNET` 权限。
 - **不需要 Root**：全部检测运行在普通 `untrusted_app` 进程及其 `clone3` 子进程沙箱内。
+- **平台兼容**：minSdk 30（Android 11）→ targetSdk 36（Android 16）；native 库 16 KB 页对齐；启用预测性返回与大屏可调整。
 
 ---
 
 ## 1. 产物
 
+> APK 不进仓库历史：release 产物作为 **[Releases](https://github.com/160thSOAR-star/AegisRASP/releases) 附件**发布；
+> 下表的 `dist/` 只是本地归档路径。
+
 | 文件 | 说明 |
 | --- | --- |
-| **Releases 页的 `AegisRASP-1.0.1-release.apk`** | **当前发布版**：已签名 Release APK，2.30 MB（2,414,555 字节），SHA-256 `B98ACACE…38D4B984` |
-| `app-ui/build/outputs/apk/release/app-ui-release.apk` | 本地构建产物（`./gradlew :app-ui:assembleRelease`） |
+| `dist/AegisRASP-2.0.0-beta-release.apk` | **当前交付**：可信度/工程纪律版，已签名 Release APK |
+| `dist/AegisRASP-1.0.3-release.apk` | 1.0.3（versionCode 5）：闪退加固 + 阶段诊断 |
+| `dist/AegisRASP-1.0.2-release.apk` | 1.0.2（versionCode 4）：API 36 / 16 KB 页对齐 + 6 处判据修正 |
+| `dist/AegisRASP-1.0.1-release.apk` | 1.0.1 正式版（versionCode 3，41→51 项转正版） |
+| `dist/AegisRASP-1.0.1-rc-release.apk` | 1.0.1 的候选版（versionCode 2），保留用于回溯/对比 |
+| `dist/AegisRASP-1.0.0-release.apk` | 初版（41 项），保留用于对比/回归 |
+| `app-ui/build/outputs/apk/release/app-ui-release.apk` | 构建产物（与 dist 副本同一文件） |
 | `CHANGELOG.md` | **版本变更的唯一权威记录**（含发版检查清单） |
-| `INDEX.md` | **文件目录索引**：按"要找什么"列出文档、源码、构建配置 |
-| `HANDOVER.md` | 交接说明：状态、设计思路、踩坑点、禁止事项、开工命令 |
+| `INDEX.md` | **文件目录索引**：按"要找什么"列出 APK、文档、源码、构建配置、工具链 |
+| `ROADMAP.md` | **发展规划**：版本路线、技术债清单、KPI、风险登记 |
+| `docs/07-崩溃排查.md` | 闪退排查：抓 logcat、读阶段埋点、逐步隔离、反馈清单 |
+| `HANDOVER.md` | 交接说明：状态、设计思路、踩坑点、版本纪律、禁止事项、开工命令 |
+| `HANDOVER-2.0.0-beta.md` | **本次会话交接补充**：当前状态、事件时间线、10 条注意事项、交接清单、项目与维护者评价 |
 | `docs/00-设计理念.md` | 为什么这样设计：观测模型、五条准则、打分哲学、UI 与工程取舍 |
 | `docs/01-检测项清单.md` | 51 个检测项的原理、实现、痕迹特征、Momo 为何检测不到 |
 | `docs/02-误报规避与白名单.md` | 分级白名单、逐项误报场景与过滤规则 |
 | `docs/03-风险与绕过分析.md` | 每类的未来绕过可能、兜底思路、本质性痕迹判定 |
 | `docs/04-测试矩阵.md` | 8 类环境下的预期分数、命中证据、耗时 |
 | `docs/05-构建与验证记录.md` | 构建环境、命令、已完成的校验、未做真机验证的项 |
-| `docs/06-签名与迭代.md` | 证书指纹、版本号规则、覆盖升级与重签流程（口令不入库） |
+| `docs/06-签名与迭代.md` | **签名身份/指纹、版本号规则、覆盖升级与重签流程**（口令不入库，见 `keystore/README.md`） |
 
-> APK 不作为源码提交，只在 **Releases** 页提供下载（体积大且每次发版都会让仓库历史翻倍）。
-
-安装：从 Releases 下载 `AegisRASP-1.0.1-release.apk` 后 `adb install -r AegisRASP-1.0.1-release.apk`
+安装：从 Releases 下载 `AegisRASP-2.0.0-beta-release.apk` 后 `adb install -r <该文件>`（签名说明见 `docs/06`）
 
 ---
 
@@ -101,15 +126,21 @@ E:\安卓检测项目
 │     ├─ data/        SettingsRepository（DataStore）
 │     └─ export/      ExportManager（JSON / Markdown / HTML + 分享）
 ├─ docs/                        # 00 设计理念、01 检测项、02 误报、03 风险、04 测试矩阵、05 构建记录、06 签名
-├─ keystore/                    # 只有 README：签名私钥与口令不入库
-└─ dist/                        # 本地交付 APK，不入库（走 Releases 分发）
+├─ dist/                        # 本地交付 APK 归档（不入库，见 Releases）
+└─ keystore/README.md           # 私钥不入库；本地密钥库与口令配置说明
 ```
 
 ---
 
 ## 5. 构建
 
-环境：JDK 17、Android SDK Platform 35、Build-Tools 35.0.0、NDK 27.1.12297006（ndk-build）、Gradle 8.9。
+环境：JDK 17、Android SDK Platform **36**、Build-Tools **36.0.0**、NDK 27.1.12297006（ndk-build）、Gradle 8.9、**AGP 8.7.3**。
+
+> ⚠️ **实验性组合**：AGP 8.7.3 官方支持的 `compileSdk` 上限是 **35**。本项目编译到 36，是靠
+> `gradle.properties` 里的 `android.suppressUnsupportedCompileSdk=36` **绕过 AGP 的守卫**，
+> 不是「官方支持」。能构建、能过 `lintVitalRelease`、能签名，但 **d8/R8/lint 都没有按 API 36 验证过**。
+> 正解是升级 AGP（8.9+，需要 Gradle 8.11+），该升级已列入 `ROADMAP.md` 技术债。
+> 在完成升级前，**不要把「构建成功」当作「API 36 兼容性正确」**。
 
 ```bash
 # 1. 本地 SDK 路径
@@ -157,6 +188,38 @@ echo sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk > local.properties
 
 > 完整变更以仓库根目录 [CHANGELOG.md](CHANGELOG.md) 为准；应用内「关于 → 更新日志」是其精简版。
 
+### 2.0.0-beta（2026-11-21，versionCode 6）
+
+- **性质**：可信度与工程纪律版本，不是功能版本。代码只改了共享页释放（`munmap`）与内存屏障，
+  其余全是文档真值修复。
+- **修正「判据未变」的错误陈述**：1.0.2 实际有 6 处判据/可用性变更（`INJ-005`、`AHK-006`、
+  `KRN-007`、`ZYS-007`、`BPF-004`、`MNT-001`），现在 `docs/01` §0.3 有逐项对照表。
+- **修正四份互相矛盾的「真机验证状态」**：统一为「无系统性真机基线，只有一条未附日志的闪退反馈」。
+- **`docs/01`–`docs/04` 全部按新判据重写**；`docs/03` §2.8 补记 AHK-006 的假阴性窗口；
+  `docs/04` 新增 §6.9 说明判据变更对预期分数的影响。
+- **修复共享页泄漏**：兼容探测与沙箱的 `MAP_SHARED` 匿名页此前每轮检测泄漏一页，已 `munmap`。
+- **AGP 组合标为实验性**：`AGP 8.7.3 + compileSdk 36` 依赖 `suppressUnsupportedCompileSdk`。
+- **最坏耗时更正**：`probe` 阶段最长 800 ms 且不计入模块预算，最坏总耗时 20.8 s → **21.6 s**。
+
+### 1.0.3（2026-11-21，versionCode 5）
+
+- **修复闪退**：`pidfd_open` / `openat2` / `clone3` 改为「一次性子进程探测后再用」，
+  命中 seccomp TRAP（SIGSYS）时自动回退到 `/proc` 路径与 `clone(SIGCHLD)`。
+- **修复 JNI 中止**：证据里的非法 UTF-8（来自内核的进程名/路径）在 JSON 转义阶段替换为 `?`，
+  避免 `NewStringUTF` 让 ART abort。
+- **修复沙箱等待**：`clock_nanosleep` 补全参数，消除忙等与子进程过早回收。
+- **新增诊断**：阶段埋点（首页黄色横幅指出崩在哪个模块）、`compat_probe.txt`、`last_crash.txt`、`docs/07-崩溃排查.md`。
+
+### 1.0.2（2026-11-21，versionCode 4）
+
+- **平台兼容**：compileSdk/targetSdk 升级到 **API 36（Android 16）**，Build-Tools 36.0.0；minSdk 保持 30。
+- **16 KB 页对齐**：native 库全部 `LOAD` 段 `Align=0x4000`，适配 Android 15+ 的 16 KB 页设备。
+- **预测性返回**：`enableOnBackInvokedCallback="true"`；`resizeableActivity="true"` 适配大屏。
+- **UI**：移除测试页右上角的设置图标，设置入口只保留底部导航。
+- **修复**：`INJ-005` 模拟器误报、`AHK-006` 复测去抖、`KRN-007` SELinux 拒绝、`ZYS-007` 关键词收紧、
+  `BPF-004` 可用性标记、`MNT-001` 失败时补齐 002~006 的不可用状态。
+- **文档**：新增 `ROADMAP.md`、`INDEX.md`。
+
 ### 1.0.1（2026-11-21，versionCode 3）
 
 - **发版性质**：1.0.1-rc **转正式版**；检测项（51）、判据、白名单 v3、权重与打分模型、调度预算**均未变更**。
@@ -166,7 +229,7 @@ echo sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk > local.properties
 - **版本号**：`versionCode` 2 → 3，`versionName` `1.0.1-rc` → `1.0.1`。
 - **应用内日志**：「关于 → 更新日志」新增 1.0.1 条目，保留 1.0.1-rc / 1.0.0 历史条目。
 - **校验**：v2 签名与证书指纹（与 1.0.0 同一密钥）、双 ABI `.so`、51 项 ID、JNI 契约、`lintVitalRelease` 全部通过。
-- **产物**：`AegisRASP-1.0.1-release.apk`（Releases 附件），SHA-256 `B98ACACE…38D4B984`（完整值见 `docs/05` §3、`docs/06` §1）。
+- **产物**：`dist/AegisRASP-1.0.1-release.apk`，SHA-256 `B98ACACE…38D4B984`（完整值见 `docs/05` §3、`docs/06` §1）。
 - **覆盖升级**：与 1.0.0 / 1.0.1-rc 同一签名，已装旧版可直接 `adb install -r`。
 
 ### 1.0.1-rc（2026-11-21，versionCode 2）
@@ -201,11 +264,3 @@ echo sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk > local.properties
 ## 10. 合规声明
 
 本项目的全部代码用于**设备本地痕迹检测与证据采集**，不包含任何绕过、攻击、提权或修改 KernelSU / Magisk / LSPosed 环境的功能；不采集、不上传任何用户数据；不进行任何远程校验。
-
----
-
-## 11. 许可证
-
-MIT License，见 [`LICENSE`](LICENSE)。可自由使用、修改、商用与再分发，保留版权声明即可。
-
-签名私钥、口令与发布用 APK 不在本仓库内（见 `keystore/README.md` 与 `.gitignore`）；从 Releases 下载的安装包由项目维护者用同一密钥签名，可用证书指纹核对。

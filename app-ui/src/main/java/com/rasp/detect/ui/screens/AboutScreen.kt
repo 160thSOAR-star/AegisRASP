@@ -159,7 +159,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
         item {
             GlassCard(modifier = Modifier.fillMaxWidth(), corner = 22.dp) {
                 SectionHeader(title = "适用版本与场景")
-                InfoRow("主要目标", "Android 15（API 35）/ CloreOS15 / AOSP15")
+                InfoRow("主要目标", "Android 15（API 35）/ Android 16（API 36）/ CloreOS15 / AOSP15")
                 InfoRow("兼容下限", "Android 11（API 30），更低版本缺少 pidfd / statx / clone3")
                 InfoRow("适用环境", "KernelSU、Shamiko、Zygisk DenyList、LSPosed、HideMyApplist Next、susfs")
                 InfoRow("不适用", "需要跨进程读取的场景（受 SELinux 限制时会标记不可用）")
@@ -177,6 +177,45 @@ fun AboutScreen(modifier: Modifier = Modifier) {
         item {
             GlassCard(modifier = Modifier.fillMaxWidth(), corner = 22.dp) {
                 SectionHeader(title = "更新日志")
+                ChangelogRow(
+                    version = "2.0.0-beta",
+                    date = "2026-11-21",
+                    highlights = listOf(
+                        "可信度：统一「真机验证状态」口径，更正文档中「判据未变」「从未上真机」等矛盾陈述",
+                        "文档：docs/01-04 按 1.0.2 的 6 处判据变更重写，新增 docs/01 §0.3 变更对照表",
+                        "修复：兼容探测与沙箱的共享页此前未 munmap（每轮检测泄漏一页），并补内存屏障",
+                        "补充：AHK-006 两轮复测带来的假阴性窗口写入 docs/03 §2.8",
+                        "发版：versionCode 6；AGP/suppress 组合与 21.6 s 最坏耗时明确写入文档"
+                    )
+                )
+                Spacer(Modifier.height(10.dp))
+                ChangelogRow(
+                    version = "1.0.3",
+                    date = "2026-11-21",
+                    highlights = listOf(
+                        "修复：Android 16 上点击「开始检测」闪退——pidfd_open / openat2 / clone3 改为子进程探测后再用，命中 seccomp TRAP 时自动回退",
+                        "修复：证据中的非法 UTF-8 会让 NewStringUTF 中止 ART，现已做 UTF-8 校验与替换",
+                        "修复：clock_nanosleep 参数缺失导致的沙箱忙等与子进程过早回收",
+                        "新增：阶段埋点（home 黄色横幅提示上次崩在哪个模块）与兼容性探测落盘",
+                        "新增：docs/07-崩溃排查.md，说明抓日志与逐步隔离方法"
+                    )
+                )
+                Spacer(Modifier.height(10.dp))
+                ChangelogRow(
+                    version = "1.0.2",
+                    date = "2026-11-21",
+                    highlights = listOf(
+                        "兼容：编译与目标 SDK 升级到 Android 16（API 36），minSdk 保持 30",
+                        "兼容：native 库改为 16 KB 页对齐，适配 Android 15+ 的 16 KB 页设备",
+                        "兼容：启用预测性返回（enableOnBackInvokedCallback），大屏可调整尺寸",
+                        "UI：移除测试页右上角的设置图标，仅保留底部导航的设置入口",
+                        "修复：INJ-005 在模拟器上误报（改为标记不可用）；AHK-006 增加复测以排除 mountinfo 抖动",
+                        "修复：KRN-007 允许 /system/bin/sh 的 SELinux 拒绝；ZYS-007 收紧线程名关键词",
+                        "修复：BPF-004 在 init cgroup 不可读时标记不可用；MNT-001 失败时补齐 002~006 的不可用状态",
+                        "新增：ROADMAP.md（发展规划）与 INDEX.md（文件索引）"
+                    )
+                )
+                Spacer(Modifier.height(10.dp))
                 ChangelogRow(
                     version = "1.0.1",
                     date = "2026-11-21",

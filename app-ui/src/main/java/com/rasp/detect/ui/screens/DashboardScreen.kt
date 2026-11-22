@@ -24,11 +24,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -72,10 +70,10 @@ fun DashboardScreen(
     settings: AppSettings,
     onStart: () -> Unit,
     onCancel: () -> Unit,
-    onOpenSettings: () -> Unit,
     onPreviewReport: () -> Unit,
     onExport: (ExportManager.Format) -> Unit,
-    onShare: () -> Unit
+    onShare: () -> Unit,
+    onDismissDiagnostic: () -> Unit = {}
 ) {
     var reveal by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { reveal = true }
@@ -120,16 +118,35 @@ fun DashboardScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "KernelSU 运行时检测 · API 35",
+                        text = "KernelSU 运行时检测 · API 36+",
                         style = MaterialTheme.typography.labelSmall,
                         color = TextMuted
                     )
                 }
-                IconButton(onClick = onOpenSettings) {
-                    Icon(
-                        imageVector = Icons.Filled.Settings,
-                        contentDescription = "设置",
-                        tint = TextMuted
+            }
+        }
+        if (state.diagnostic != null) {
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth(), corner = 20.dp, tint = 0.66f) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "上次检测异常退出",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = com.rasp.detect.ui.theme.Amber,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "知道了",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Cyan,
+                            modifier = Modifier.clickable { onDismissDiagnostic() }
+                        )
+                    }
+                    Text(
+                        text = state.diagnostic,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted,
+                        modifier = Modifier.padding(top = 8.dp)
                     )
                 }
             }

@@ -17,7 +17,9 @@ data class RaspUiState(
     val progressTotal: Int = CheckCatalog.total,
     val error: String? = null,
     val startedAt: Long = 0L,
-    val elapsedMs: Long = 0L
+    val elapsedMs: Long = 0L,
+    /** 上次检测异常退出的诊断信息（native 崩溃 / Java 崩溃），无则为 null */
+    val diagnostic: String? = null
 ) {
     val score: Int get() = report?.score ?: 0
     val level: RiskLevel get() = report?.level ?: RiskLevel.fromScore(score)

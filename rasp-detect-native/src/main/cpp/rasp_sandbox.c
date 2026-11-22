@@ -96,9 +96,13 @@ static int sandbox_spawn(sandbox_shm_t *shm, pid_t *out_pid)
     memset(&args, 0, sizeof(args));
     args.exit_signal = RASP_SIGCHLD;
 
-    long pid = rasp_raw_clone3(&args, sizeof(args));
+    long pid = -1;
+    /* clone3 先由兼容性探测确认可用，避免 seccomp TRAP 直接把主进程带走 */
+    if (rasp_clone3_enabled()) {
+        pid = rasp_raw_clone3(&args, sizeof(args));
+    }
     if (pid < 0) {
-        /* 内核不支持 clone3 时回退到 clone(SIGCHLD)，语义等价（fork） */
+        /* 回退到 clone(SIGCHLD)：语义等价（fork），所有 Android 内核都允许 */
         pid = rasp_raw_clone((unsigned long)RASP_SIGCHLD, NULL);
     }
     if (pid < 0) return -1;
@@ -116,7 +120,8 @@ static void nanosleep_ms(long ms)
     struct rasp_timespec ts;
     ts.tv_sec = ms / 1000;
     ts.tv_nsec = (ms % 1000) * 1000000L;
-    (void)rasp_raw_syscall2(SYS_CLOCK_NANOSLEEP, RASP_CLOCK_MONOTONIC, (long)&ts);
+    /* clock_nanosleep(clockid, flags, req, rem) —— 必须是四参数，否则会立即返回造成忙等 */
+    (void)rasp_raw_syscall4(SYS_CLOCK_NANOSLEEP, RASP_CLOCK_MONOTONIC, 0, (long)&ts, 0);
 }
 
 /* 子进程侧读取父 pid：直接解析 /proc/self/status，避免在 fork 后使用 libc 缓存 */
@@ -177,6 +182,11 @@ void rasp_check_sandbox(rasp_ctx_t *c)
                   NULL, err);
         rasp_emit(c, "MNT-007", "沙箱子进程视图一致性", "sandbox", GRADE_STRONG, 0.0, 0, 0, NULL,
                   err);
+        rasp_raw_munmap(shm, sizeof(sandbox_shm_t));
+        g_shm = NULL;
+        c->shm = NULL;
+        c->shm_size = 0;
+        c->shm_ready = 0;
         return;
     }
 
@@ -188,6 +198,7 @@ void rasp_check_sandbox(rasp_ctx_t *c)
         if (r == child) break;
         nanosleep_ms(2);
         waited += 2;
+        __sync_synchronize(); /* 子进程写 ready 前已写入其余字段 */
         if (shm->ready) {
             (void)rasp_raw_wait4(child, &status, 1, NULL);
             break;
@@ -255,4 +266,11 @@ void rasp_check_sandbox(rasp_ctx_t *c)
     rasp_emit(c, "SBX-001", "clone3 沙箱独立性校验", "sandbox", GRADE_INDIRECT,
               (child_ok && !independent) ? 0.5 : 0.0, child_ok && !independent, child_ok, raw2,
               child_ok ? NULL : "sandbox not available");
+
+    /* 共享页收尾：本函数每轮只调用一次，1.0.3 及更早版本未 munmap（每轮泄漏一页） */
+    rasp_raw_munmap(shm, sizeof(sandbox_shm_t));
+    g_shm = NULL;
+    c->shm = NULL;
+    c->shm_size = 0;
+    c->shm_ready = 0;
 }

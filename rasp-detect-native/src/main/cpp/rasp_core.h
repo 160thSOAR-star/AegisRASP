@@ -77,7 +77,21 @@ struct rasp_ctx {
     void *shm;
     size_t shm_size;
     int shm_ready;
+
+    /* 兼容性探测结果（由子进程探测得出，默认全部禁用 = 最保守） */
+    int pidfd_allowed;   /* 1 = 本进程可安全调用 pidfd_open */
+    int openat2_allowed; /* 1 = 本进程可安全调用 openat2 */
+    int probe_killed_sig;/* 探测子进程被信号杀死时的信号编号（0 = 正常完成） */
+    /* 阶段埋点目录（由 Java 层传入应用私有目录，可空） */
+    char stage_dir[256];
 };
+
+/* 兼容性探测与阶段埋点（rasp_compat.c） */
+void rasp_probe_compat(rasp_ctx_t *c);
+void rasp_stage(rasp_ctx_t *c, const char *stage);
+int rasp_pidfd_enabled(void);
+int rasp_openat2_enabled(void);
+int rasp_clone3_enabled(void);
 
 /* ---------- 工具 ---------- */
 long long rasp_now_ms(void);

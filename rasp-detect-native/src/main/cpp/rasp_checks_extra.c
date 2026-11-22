@@ -27,7 +27,36 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/system_properties.h>
 #include <unistd.h>
+
+/* ------------------------------------------------------------------ 环境判定 */
+
+/*
+ * 模拟器/虚拟化环境判定：Android Studio 模拟器的 /proc 视图与代码映射来源
+ * 与真机差异较大（inject / fds / 映射路径），相关项在模拟器上应标记为不可用，
+ * 而不是给出误报。结果做进程内缓存（属性不会在运行期变化）。
+ */
+static int running_on_emulator(void)
+{
+    static int cached = -1;
+    if (cached >= 0) return cached;
+
+    char v[PROP_VALUE_MAX];
+    memset(v, 0, sizeof(v));
+    __system_property_get("ro.kernel.qemu", v);
+    if (v[0] == '1') return (cached = 1);
+
+    memset(v, 0, sizeof(v));
+    __system_property_get("ro.boot.qemu", v);
+    if (v[0] == '1') return (cached = 1);
+
+    memset(v, 0, sizeof(v));
+    __system_property_get("ro.hardware", v);
+    if (strcmp(v, "ranchu") == 0 || strcmp(v, "goldfish") == 0) return (cached = 1);
+
+    return (cached = 0);
+}
 
 /* ------------------------------------------------------------------ 通用解析 */
 
@@ -277,15 +306,16 @@ static void check_errno_semantics(rasp_ctx_t *c)
         const char *path;
         int expect_success;
         int expect_errno;
+        int allow_denied; /* 允许 EACCES/EPERM（SELinux 可能拒绝，不代表异常） */
         const char *label;
     } probe_t;
 
     static const probe_t probes[] = {
-        {"/proc/self/__aegis_probe_noent__", 0, ENOENT, "procfs-noent"},
-        {"/dev/__aegis_probe_noent__", 0, ENOENT, "dev-noent"},
-        {"/system/bin/sh", 1, 0, "system-sh"},
-        {"/proc/version", 1, 0, "proc-version"},
-        {"", 0, ENOENT, "empty-path"},
+        {"/proc/self/__aegis_probe_noent__", 0, ENOENT, 0, "procfs-noent"},
+        {"/dev/__aegis_probe_noent__", 0, ENOENT, 0, "dev-noent"},
+        {"/system/bin/sh", 1, 0, 1, "system-sh"},
+        {"/proc/version", 1, 0, 0, "proc-version"},
+        {"", 0, ENOENT, 0, "empty-path"},
     };
 
     int checked = 0, anomalies = 0;
@@ -298,6 +328,10 @@ static void check_errno_semantics(rasp_ctx_t *c)
 
         if (probes[i].expect_success) {
             if (fd < 0) {
+                /* SELinux 策略可能拒绝读 /system/bin/sh，这属于环境限制而非异常 */
+                if (probes[i].allow_denied && (err == EACCES || err == EPERM)) {
+                    continue;
+                }
                 anomalies++;
                 size_t l = strlen(detail);
                 snprintf(detail + l, sizeof(detail) - l, "%s(expected ok, got %d);",
@@ -356,6 +390,13 @@ static int code_path_allowed(const char *path)
 
 static void check_code_mapping_origin(rasp_ctx_t *c)
 {
+    /* 模拟器的代码映射来源与真机差异极大，直接标记不可用，避免已知误报 */
+    if (running_on_emulator()) {
+        rasp_emit(c, "INJ-005", "非系统代码映射来源检测", "inject", GRADE_INDIRECT, 0.0, 0, 0,
+                  NULL, "emulator environment: code mapping origin is not comparable");
+        return;
+    }
+
     static rasp_map_t maps[1024];
     int n = rasp_maps_load(maps, 1024);
     if (n <= 0) {
@@ -463,59 +504,83 @@ static void check_function_segment(rasp_ctx_t *c)
 
 /* ------------------------------------------------------------------ AHK-006 */
 
+static int read_mountinfo_via(int via_openat2, char *buf, size_t cap, size_t *out_len)
+{
+    int fd;
+    if (via_openat2) {
+        struct rasp_open_how how;
+        memset(&how, 0, sizeof(how));
+        how.flags = RASP_O_RDONLY | RASP_O_CLOEXEC;
+        how.resolve = 0;
+        fd = rasp_raw_openat2(RASP_AT_FDCWD, "/proc/self/mountinfo", &how, sizeof(how));
+    } else {
+        fd = rasp_raw_open("/proc/self/mountinfo", RASP_O_RDONLY | RASP_O_CLOEXEC, 0);
+    }
+    if (fd < 0) return -1;
+    int rc = rasp_read_all_fd(fd, buf, cap - 1, out_len);
+    rasp_raw_close(fd);
+    return rc;
+}
+
 static void check_openat2(rasp_ctx_t *c)
 {
-    static char buf2[64 * 1024];
-    static char buf1[64 * 1024];
+    static char buf_open[64 * 1024];
+    static char buf_open2[64 * 1024];
 
-    struct rasp_open_how how;
-    memset(&how, 0, sizeof(how));
-    how.flags = RASP_O_RDONLY | RASP_O_CLOEXEC;
-    how.resolve = 0;
+    /* openat2 由兼容性探测决定是否可用：不可用时明确标记，不做盲试 */
+    if (!rasp_openat2_enabled()) {
+        rasp_emit(c, "AHK-006", "openat2 与 openat 双路径一致性", "antihook", GRADE_STRONG, 0.0,
+                  0, 0, NULL,
+                  "openat2 disabled by compat probe (seccomp/unsupported kernel)");
+        return;
+    }
 
-    int fd2 = rasp_raw_openat2(RASP_AT_FDCWD, "/proc/self/mountinfo", &how, sizeof(how));
-    if (fd2 < 0) {
-        int err = errno;
+    int reads = 0, divergences = 0, openat2_unavailable = 0;
+    size_t last_len1 = 0, last_len2 = 0;
+
+    /* mountinfo 会在挂载变化时抖动，因此"不一致"必须复测一次才能成立 */
+    for (int attempt = 0; attempt < 2; attempt++) {
+        size_t len1 = 0, len2 = 0;
+        if (read_mountinfo_via(0, buf_open, sizeof(buf_open), &len1) != 0) break;
+        if (read_mountinfo_via(1, buf_open2, sizeof(buf_open2), &len2) != 0) {
+            openat2_unavailable = 1;
+            break;
+        }
+        reads++;
+        last_len1 = len1;
+        last_len2 = len2;
+        if (len1 == len2 && memcmp(buf_open, buf_open2, len1) == 0) {
+            divergences = 0;
+            break;
+        }
+        divergences++;
+    }
+
+    if (reads == 0) {
         char raw[160];
-        snprintf(raw, sizeof(raw), "{\"errno\":%d,\"msg\":\"%s\"}", err, strerror(err));
+        snprintf(raw, sizeof(raw), "{\"openat2_unavailable\":%s}",
+                 openat2_unavailable ? "true" : "false");
         rasp_emit(c, "AHK-006", "openat2 与 openat 双路径一致性", "antihook", GRADE_STRONG, 0.0,
-                  0, 0, raw, "openat2 unavailable on this kernel");
+                  0, 0, raw,
+                  openat2_unavailable ? "openat2 unavailable on this kernel" : "read failed");
         return;
     }
-    size_t len2 = 0;
-    int rc2 = rasp_read_all_fd(fd2, buf2, sizeof(buf2) - 1, &len2);
-    rasp_raw_close(fd2);
 
-    int fd1 = rasp_raw_open("/proc/self/mountinfo", RASP_O_RDONLY | RASP_O_CLOEXEC, 0);
-    if (fd1 < 0) {
-        rasp_emit(c, "AHK-006", "openat2 与 openat 双路径一致性", "antihook", GRADE_STRONG, 0.0,
-                  0, 0, NULL, "openat failed");
-        return;
-    }
-    size_t len1 = 0;
-    int rc1 = rasp_read_all_fd(fd1, buf1, sizeof(buf1) - 1, &len1);
-    rasp_raw_close(fd1);
-
-    int compared = (rc1 == 0 && rc2 == 0);
-    int diverge = 0;
-    if (compared) {
-        if (len1 != len2) diverge = 1;
-        else if (memcmp(buf1, buf2, len1) != 0) diverge = 1;
-    }
-
+    int diverge = divergences >= 2;
     char raw[RASP_RAW_MAX];
     rasp_buf_t b;
     rb_init(&b, raw, sizeof(raw));
     rb_puts(&b, "{");
-    rb_json_kv_int(&b, "openat_len", (long long)len1);
+    rb_json_kv_int(&b, "openat_len", (long long)last_len1);
     rb_puts(&b, ",");
-    rb_json_kv_int(&b, "openat2_len", (long long)len2);
+    rb_json_kv_int(&b, "openat2_len", (long long)last_len2);
+    rb_puts(&b, ",");
+    rb_json_kv_int(&b, "attempts", reads);
     rb_puts(&b, ",");
     rb_json_kv_bool(&b, "divergence", diverge);
     rb_puts(&b, "}");
     rasp_emit(c, "AHK-006", "openat2 与 openat 双路径一致性", "antihook", GRADE_STRONG,
-              diverge ? 0.92 : 0.0, diverge, compared, raw,
-              compared ? NULL : "read failed on one path");
+              diverge ? 0.92 : 0.0, diverge, 1, raw, NULL);
     if (diverge) c->anti_hook_hit = 1;
 }
 
@@ -587,8 +652,9 @@ static void check_dir_filter(rasp_ctx_t *c)
 
 static int thread_name_suspicious(const char *comm)
 {
-    static const char *const keys[] = {"zygisk", "lspd", "lsposed", "riru", "magisk",
-                                       "ksu",    "inject", "payload", "inline", "hook"};
+    /* 只保留与隐藏套件强相关的名字，避免 "hook"/"inline" 这类通用词误报 */
+    static const char *const keys[] = {"zygisk", "lspd", "lsposed", "riru",
+                                       "magisk", "ksud", "injected", "payload_"};
     for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
         if (rasp_contains_ci(comm, keys[i])) return 1;
     }
@@ -661,7 +727,7 @@ void rasp_check_extra(rasp_ctx_t *c)
     check_statfs_flags(c);
     if (!rasp_deadline_hit(c)) check_mount_dev(c);
     if (!rasp_deadline_hit(c)) check_time_sanity(c);
-    check_errno_semantics(c);
+    if (!rasp_deadline_hit(c)) check_errno_semantics(c);
     if (!rasp_deadline_hit(c)) check_code_mapping_origin(c);
     if (!rasp_deadline_hit(c)) check_function_segment(c);
     if (!rasp_deadline_hit(c)) check_openat2(c);

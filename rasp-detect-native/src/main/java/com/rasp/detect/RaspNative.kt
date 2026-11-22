@@ -29,6 +29,7 @@ object RaspNative {
      * @param configJson 配置 JSON（fastMode / sandbox / whitelist / disabled）
      * @param whitelistJson 白名单 JSON（mounts / processes / properties / kernel / oem）
      * @param weightSpec 自定义权重 "ID=权重;ID=权重"
+     * @param stageDir 应用私有目录（用于阶段埋点与兼容性探测结果落盘），可为空串
      * @param sink 证据流式回调，可为 null
      * @return 完整报告 JSON
      */
@@ -36,6 +37,7 @@ object RaspNative {
         configJson: String,
         whitelistJson: String,
         weightSpec: String,
+        stageDir: String,
         sink: EvidenceSink?
     ): String
 

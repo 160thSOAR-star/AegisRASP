@@ -135,10 +135,10 @@ private fun AegisApp(
                             settings = settings,
                             onStart = vm::startDetection,
                             onCancel = vm::cancelDetection,
-                            onOpenSettings = { tab = AegisTab.SETTINGS },
                             onPreviewReport = { showReport = true },
                             onExport = { format -> exportReport(format) },
-                            onShare = { shareReport() }
+                            onShare = { shareReport() },
+                            onDismissDiagnostic = vm::dismissDiagnostic
                         )
 
                         AegisTab.SETTINGS -> SettingsScreen(settings = settings, vm = vm)

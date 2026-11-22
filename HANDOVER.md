@@ -3,17 +3,23 @@
 > 写给接手这个项目的 AI 或工程师：先读这份，再动手。
 > 它记录**当前状态、为什么这样设计、以及已经踩过的坑**——很多坑会以"看起来能编译但结果全错"的形式复现。
 
+> **📌 必读配套文件：[`HANDOVER-2.0.0-beta.md`](HANDOVER-2.0.0-beta.md)**
+> 本文件是**长期有效**的设计/坑/禁止事项；那份是**会过期**的当前状态、完整事件时间线、
+> 10 条注意事项、按优先级的交接清单，以及对项目与维护者的坦率评价。
+> **建议顺序**：先跑那份的 §2 自检 → 读本文 §1–§2 → 再读那份 §3 的事故复盘。
+> 两份冲突时，版本/状态类以 `CHANGELOG.md` 与产物为准，设计类以本文为准。
+
 ---
 
 ## 0. 一句话背景
 
-Aegis RASP 是一个 Android 15（API 35）上、**非 Root、纯本地**的 KernelSU 隐藏环境检测 App：
+Aegis RASP 是一个 Android 15–16（API 35–36）上、**非 Root、纯本地**的 KernelSU 隐藏环境检测 App：
 51 个检测项、Native（C11/bionic）核心 + Compose Material3 界面、加权打分、可导出报告。
 
 - 工程目录：`E:\安卓检测项目`
-- 当前版本：**1.0.1**（versionCode 3）
-- 可用产物：`dist/AegisRASP-1.0.1-release.apk`（2.30 MB，SHA-256 `B98ACACE…38D4B984`）
-- 包名：`com.rasp.detect.aegis`；ABI：arm64-v8a / x86_64；minSdk 30 / targetSdk 35
+- 当前版本：**2.0.0-beta**（versionCode 6；compileSdk/targetSdk **36 / Android 16**）
+- 可用产物：`dist/AegisRASP-2.0.0-beta-release.apk`（2,430,987 B，SHA-256 `CCFA3A26…C0A25954`）
+- 包名：`com.rasp.detect.aegis`；ABI：arm64-v8a / x86_64；minSdk 30 / targetSdk 36；native 库 16 KB 页对齐
 
 ---
 
@@ -21,12 +27,17 @@ Aegis RASP 是一个 Android 15（API 35）上、**非 Root、纯本地**的 Ker
 
 | 事实 | 含义 |
 | --- | --- |
-| **从未在真机/模拟器上跑过** | 所有分数区间都是静态推算；第一次上真机大概率要调阈值 |
-| 已做的验证 | 双 ABI 零警告编译、`.so` 仅导出 `JNI_OnLoad`、JNI 签名与 dex 对得上、APK v2 签名、`lintVitalRelease` 通过、新增 ID 确实在 `.so` 里 |
-| 文档里的数字 | `04-测试矩阵` 是推算值；`02/03` 的"是否可擦除"是分析结论，不是实测 |
+| **真机验证：无系统性基线** | 1.0.0–1.0.1 **从未**在任何真机/模拟器上运行；1.0.2 收到一条「Android 16 上点开始检测即退出」的用户反馈，但**没有 `logcat`、没有机型/内核**；1.0.3 的兼容探测/UTF-8/`clock_nanosleep` 加固都是针对该反馈的**推断性修复**，从未复现确认。所以「1.0.3 修好了闪退」这句话**没有证据**。 |
+| 已做的验证（可复现） | 双 ABI 零警告编译（15 个 C 文件 / 30 个编译单元 / 0 warning）、`.so` 仅导出 `JNI_OnLoad`、JNI 签名与 dex 对得上、APK v2 签名、`lintVitalRelease` 通过、16 KB `LOAD` 对齐、新增 ID 确实在 `.so` 里、`apksigner` 证书指纹与历史一致 |
+| 文档里的数字 | `04-测试矩阵` 是**静态推算**；`02/03` 的"是否可擦除"是分析结论，不是实测；所有「耗时」也未实测 |
 | 跨进程 `/proc` | 普通应用读 init/system_server **几乎必然 EACCES**，相关项会 `available=false`（这是"无法判定"，不是"安全"） |
+| 判据是否变过 | **变过，6 处**（1.0.2）。1.0.2 的 CHANGELOG 曾误写「判据未改动」，2.0.0-beta 已更正，逐项对照表在 `docs/01` §0.3 |
 
-**所以第一优先级不是加功能，而是拿一台 Android 15 设备做基线校准。**
+**所以第一优先级不是加功能，而是拿一台 Android 15/16 设备做基线校准。**
+
+> **这条口径曾经四份文档互相矛盾**（`HANDOVER` 说「从未跑过」、`ROADMAP` 说「真机验证=零」、
+> `CHANGELOG` 与 `INDEX` 说「修复了 Android 16 闪退」）。2.0.0-beta 把它们统一成上面这一条。
+> 如果你（维护者）其实已经跑过真机，请立刻改正这里并补上设备信息——不要再让文档各说各话。
 
 ---
 
@@ -63,6 +74,22 @@ Compose UI（最不可信，LSPosed 主战场）
 - 单条强证据 → 分数下限 25；反 Hook → 下限 85；只有 1 条弱线索时总分 ×0.5；
 - 阈值 20 / 50；等级用未取整分数判定；
 - 分数回答"多危险"，confidence 回答"多确定"，两者不可合并。
+
+---
+
+### 2.5 兼容探测层（1.0.3 起，改检测前必须知道）
+- 入口：`rasp_jni.c::jni_run_detect` 在**任何**检测之前先 `rasp_stage(&ctx, "probe")` + `rasp_probe_compat(&ctx)`，
+  结果决定 `pidfd_open` / `openat2` / `clone3` 能不能用（`rasp_pidfd_enabled()` 等三个门控函数）。
+- 为什么需要：部分 ROM 的 seccomp 对较新 syscall 返回 `SECCOMP_RET_TRAP`（`SIGSYS` 直接杀进程），
+  不返回 `ENOSYS`。所以「试着调用一下看看」会把整个检测进程带走。
+- 做法：`clone(SIGCHLD)` 一个一次性子进程去试（**不共享地址空间、不 malloc、不加锁、不碰 Java**），
+  子进程正常退出才采纳结果；被子进程信号杀死就**本次会话永久禁用**对应调用，退化为 `/proc` 路径
+  与 `clone(SIGCHLD)`。探测结果落盘 `files/compat_probe.txt`（`pidfd/ openat2/ clone3/ sig=`）。
+- 代价（不要忘记）：① 每轮检测多一次 fork + 最长 800 ms 等待，**不计入任何模块预算**，
+  最坏总耗时因此是 21.6 s 而不是 20.8 s；② 若子进程因任何原因被信号杀死，三个调用会**一起禁用**，
+  `AHK-006` 随之整项不可用（这是保守设计，不是缺陷）。
+- 阶段埋点：每个模块执行前把阶段名写进 `files/last_stage`（11 次写文件/轮），崩了下次启动首页出黄色横幅。
+  这本身是检测器的**自我痕迹**（fd、写盘），评估「检测器自身被攻击」时要把它算进去。
 
 ---
 
@@ -135,11 +162,28 @@ Compose UI（最不可信，LSPosed 主战场）
 - 等待超时 1500 ms，超时 `SIGKILL` 回收；`clone3` 失败回退 `clone(SIGCHLD)`。
 
 ### 3.9 版本/签名/发版
-- 密钥：`keystore/aegis-release.jks`（**PKCS12**，别名 `aegis`，口令从本地不入库的 `keystore/keystore.properties` 读取，证书 SHA-256 `93:1E:E6:…`）。
+- 密钥：`keystore/aegis-release.jks`（**PKCS12**，别名 `aegis`，口令见本地 `keystore/keystore.properties`（**不入库**），证书 SHA-256 `93:1E:E6:…`）。
 - 覆盖升级三条件：`versionCode` 递增、同签名、同包名。换钥 = 换身份，只能卸载重装。
 - 应用内「关于 → 更新日志」是 `AboutScreen.kt` 里的字符串常量，**改日志必须改代码重新打包**；
   `CHANGELOG.md` 只是仓库记录，不影响 APK。
-- 每次发版要同步：`versionCode/versionName`、`AboutScreen.kt`、`CHANGELOG.md`、`README §8`、`docs/05`、`docs/06`。
+- 每次发版要同步：`versionCode/versionName`、`AboutScreen.kt`、`CHANGELOG.md`、`README §8`、`docs/05`、`docs/06`，
+  **外加 `INDEX.md`（1.0.2 起新增）与 `HANDOVER.md` 自身的版本行**——1.0.2→1.0.3 就是漏了后者，
+  导致交接文档停在 1.0.2。
+
+### 3.10 版本纪律（2.0.0-beta 的教训，比技术坑更贵）
+1. **改了判据就要写「判据改了」**。1.0.2 的 CHANGELOG 一边列 6 处判据修改、一边在「未变」里写
+   「判据未改动」，`docs/05` 还复述了这句。判据改动会改变同一台设备上的命中结果，它不是「文案」。
+   现在 `docs/01` §0.3 有一张固定的变更对照表，**以后每次改判据都必须往这张表里加一行**。
+2. **判据文档要和代码同一次提交里改**。`docs/01`–`docs/04` 曾经集体停在 1.0.1 整整两个版本，
+   24 万字节的描述全部过期。过期数据比没有数据危险，因为有人会拿它对账。
+3. **「是否上过真机」只能有一个答案**。它曾经在 `HANDOVER`／`ROADMAP`／`CHANGELOG`／`INDEX`
+   之间有四种说法。现在统一写在 `README` §0 与本文 §1，**改动它必须四处一起改**。
+4. **不要用 `suppress` 换「支持」**。`android.suppressUnsupportedCompileSdk=36` 只是关掉 AGP 的
+   守卫（AGP 8.7.3 官方上限 35）。能出包 ≠ 受支持。
+5. **新阶段要入预算**。1.0.3 加的 `probe` 阶段最长 800 ms，既不在任何模块预算里，也没进文档，
+   最坏总耗时从 20.8 s 悄悄变成 21.6 s。
+6. **新分配的资源要配对释放**。`MAP_SHARED` 匿名页在 1.0.3 的两处（探测、沙箱）都没 `munmap`，
+   每轮检测泄漏一页；这类问题在「点一次就退出」的场景里永远暴露不出来。
 
 ---
 
@@ -157,23 +201,23 @@ Compose UI（最不可信，LSPosed 主战场）
 ## 5. 开工清单（复制即可用）
 
 ```powershell
-# 环境（按本机实际路径填写）
-$env:JAVA_HOME='<你的 JDK 17 目录>'
-$env:ANDROID_HOME='<你的 Android SDK 目录>'
+# 环境
+$env:JAVA_HOME='E:\利于民\HMCL(2026.8.16更新)\jdk-17.0.20.1+1'
+$env:ANDROID_HOME='C:\Users\Administrator\AppData\Local\Android\Sdk'
 $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 
-# 构建（工程路径含中文时，用 ASCII 联接规避工具链问题）
-New-Item -ItemType Junction -Path 'C:\aegis-build' -Target '<工程根目录>' -Force -ErrorAction SilentlyContinue
-cd 'C:\aegis-build'
-.\gradlew.bat --no-daemon :app-ui:assembleRelease
+# 构建（走 ASCII 联接，规避中文路径工具问题）
+New-Item -ItemType Junction -Path 'E:\aegis-build' -Target 'E:\安卓检测项目' -Force -ErrorAction SilentlyContinue
+cd 'E:\aegis-build'
+& 'E:\安卓检测项目\.tools\gradle-8.9\bin\gradle.bat' --no-daemon :app-ui:assembleRelease
 
 # 校验
 & "$env:ANDROID_HOME\build-tools\35.0.0\apksigner.bat" verify --print-certs `
-  'app-ui\build\outputs\apk\release\app-ui-release.apk'
+  'E:\安卓检测项目\app-ui\build\outputs\apk\release\app-ui-release.apk'
 
 # 归档
-Copy-Item 'app-ui\build\outputs\apk\release\app-ui-release.apk' `
-  'dist\AegisRASP-<version>-release.apk' -Force
+Copy-Item 'E:\安卓检测项目\app-ui\build\outputs\apk\release\app-ui-release.apk' `
+  'E:\安卓检测项目\dist\AegisRASP-<version>-release.apk' -Force
 ```
 
 **建议阅读顺序**：`README.md` → `CHANGELOG.md` → `docs/00-设计理念.md` → `docs/01-检测项清单.md`
@@ -196,13 +240,18 @@ Copy-Item 'app-ui\build\outputs\apk\release\app-ui-release.apk' `
 
 | 路径 | 说明 |
 | --- | --- |
-| `dist/AegisRASP-1.0.1-release.apk` | 当前可安装产物（已签名，versionCode 3） |
+| `dist/AegisRASP-2.0.0-beta-release.apk` | **当前可安装产物**（已签名，versionCode 6，targetSdk 36） |
+| `dist/AegisRASP-1.0.3-release.apk` | 1.0.3（versionCode 5）：闪退加固 + 阶段诊断 |
+| `dist/AegisRASP-1.0.2-release.apk` | 1.0.2（versionCode 4）：API 36 / 16 KB 页对齐 + 6 处判据修正 |
+| `dist/AegisRASP-1.0.1-release.apk` | 1.0.1 正式版（versionCode 3），回溯/对比用 |
 | `dist/AegisRASP-1.0.1-rc-release.apk` | 1.0.1 的候选版（versionCode 2），回溯/对比用 |
 | `dist/AegisRASP-1.0.0-release.apk` | 初版（41 项），回归对比用 |
 | `keystore/aegis-release.jks` | 签名私钥，**丢失即无法升级** |
-| `rasp-detect-native/src/main/cpp/` | 14 个 C 文件（引擎 + 9 类检测 + 沙箱 + 打分 + JNI） |
+| `rasp-detect-native/src/main/cpp/` | **15 个 C 文件**（引擎 + 9 类检测 + 沙箱 + 打分 + JNI + 兼容探测 `rasp_compat.c`） |
 | `app-ui/src/main/java/com/rasp/detect/ui/` | Compose 界面（三标签、组件、导出） |
-| `docs/00`–`docs/06` | 设计、检测项、误报、对抗、测试矩阵、构建记录、签名 |
+| `docs/00`–`docs/07` | 设计、检测项、误报、对抗、测试矩阵、构建记录、签名、崩溃排查 |
 | `CHANGELOG.md` | 版本变更唯一权威记录 |
-
-> `dist/` 下的 APK 与 `keystore/` 下的私钥不计入仓库（见 `.gitignore`）：APK 作为 Release 附件分发，私钥只在本地维护。
+| `HANDOVER-2.0.0-beta.md` | **本次会话的交接补充**：当前状态、事件时间线、10 条注意事项、交接清单、项目与维护者评价 |
+| `D:\源码与备份\AegisRASP-1.0.1-rc\` | 2 代源码快照（77 文件，versionCode 2，targetSdk 35） |
+| `D:\源码与备份\AegisRASP-1.0.2\` | 4 代源码快照（82 文件，versionCode 4，targetSdk 36） |
+| `D:\源码与备份\AegisRASP-1.0.3\` | 5 代源码快照（85 文件，versionCode 5，targetSdk 36） |

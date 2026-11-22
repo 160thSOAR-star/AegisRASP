@@ -540,7 +540,8 @@ static void check_cgroup_view(rasp_ctx_t *c)
     rb_json_kv_bool(&b, "init_readable", ok2);
     rb_puts(&b, "}");
     rasp_emit(c, "BPF-004", "cgroup 视图跨进程比对", "bpf", GRADE_INDIRECT, differ ? 0.4 : 0.0,
-              differ, 1, raw, ok2 ? NULL : "init cgroup unreadable (SELinux scope)");
+              differ, ok2 ? 1 : 0, raw,
+              ok2 ? NULL : "init cgroup unreadable (SELinux scope)");
 }
 
 void rasp_check_kernel_trace(rasp_ctx_t *c)

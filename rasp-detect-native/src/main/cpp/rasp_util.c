@@ -99,6 +99,14 @@ void rb_printf(rasp_buf_t *b, const char *fmt, ...)
     rb_puts(b, tmp);
 }
 
+/*
+ * JSON 字符串转义 + UTF-8 合法性校验。
+ *
+ * 关键点：JNI 的 NewStringUTF 只接受 modified UTF-8，遇到 4 字节序列或非法字节会
+ * 直接让 ART 中止（表现为"点一下闪退"）。而证据里的进程名、路径、属性值来自内核，
+ * 不保证是合法 UTF-8。因此这里在转义阶段就把非法字节 / 4 字节序列替换成 '?'，
+ * 保证送进 JVM 的文本永远安全（中文为 3 字节，正常保留）。
+ */
 static void rb_json_escape(rasp_buf_t *b, const char *s)
 {
     if (s == NULL) {
@@ -106,22 +114,46 @@ static void rb_json_escape(rasp_buf_t *b, const char *s)
         return;
     }
     rb_puts(b, "\"");
-    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
-        switch (*p) {
-        case '"': rb_puts(b, "\\\""); break;
-        case '\\': rb_puts(b, "\\\\"); break;
-        case '\n': rb_puts(b, "\\n"); break;
-        case '\r': rb_puts(b, "\\r"); break;
-        case '\t': rb_puts(b, "\\t"); break;
-        default:
-            if (*p < 0x20) {
-                char esc[8];
-                snprintf(esc, sizeof(esc), "\\u%04x", *p);
-                rb_puts(b, esc);
-            } else {
-                char one[2] = {(char)*p, '\0'};
-                rb_puts(b, one);
-            }
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p) {
+        unsigned char c = *p;
+        if (c == '"') {
+            rb_puts(b, "\\\"");
+            p++;
+        } else if (c == '\\') {
+            rb_puts(b, "\\\\");
+            p++;
+        } else if (c == '\n') {
+            rb_puts(b, "\\n");
+            p++;
+        } else if (c == '\r') {
+            rb_puts(b, "\\r");
+            p++;
+        } else if (c == '\t') {
+            rb_puts(b, "\\t");
+            p++;
+        } else if (c < 0x20) {
+            char esc[8];
+            snprintf(esc, sizeof(esc), "\\u%04x", c);
+            rb_puts(b, esc);
+            p++;
+        } else if (c < 0x80) {
+            char one[2] = {(char)c, '\0'};
+            rb_puts(b, one);
+            p++;
+        } else if ((c & 0xE0) == 0xC0 && p[1] != '\0' && (p[1] & 0xC0) == 0x80) {
+            char two[3] = {(char)p[0], (char)p[1], '\0'};
+            rb_puts(b, two);
+            p += 2;
+        } else if ((c & 0xF0) == 0xE0 && p[1] != '\0' && p[2] != '\0' &&
+                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+            char three[4] = {(char)p[0], (char)p[1], (char)p[2], '\0'};
+            rb_puts(b, three);
+            p += 3;
+        } else {
+            /* 4 字节序列、孤立续字节、截断序列：统一替换，避免 JNI 中止 */
+            rb_puts(b, "?");
+            p++;
         }
     }
     rb_puts(b, "\"");
@@ -228,7 +260,13 @@ int rasp_read_proc(pid_t pid, const char *name, char *buf, size_t cap, size_t *o
     if (out_errno) *out_errno = 0;
     if (out_via_pidfd) *out_via_pidfd = 0;
 
-    int pfd = rasp_pidfd_open_compat(pid);
+    /* pidfd_open 在部分 ROM 的 seccomp 策略下会触发致命信号；只有探测通过才使用 */
+    int pfd = -1;
+    if (rasp_pidfd_enabled()) {
+        pfd = rasp_pidfd_open_compat(pid);
+    } else {
+        errno = ENOSYS;
+    }
     if (pfd >= 0) {
         int fd = rasp_raw_openat(pfd, name, RASP_O_RDONLY | RASP_O_CLOEXEC, 0);
         int saved = errno;

@@ -22,6 +22,7 @@
 #define SYS_OPENAT 56
 #define SYS_CLOSE 57
 #define SYS_READ 63
+#define SYS_WRITE 64
 #define SYS_GETDENTS64 61
 #define SYS_READLINKAT 78
 #define SYS_NEWFSTATAT 79
@@ -51,9 +52,11 @@
 #define SYS_STATFS 43
 #else /* __x86_64__ */
 #define SYS_READ 0
+#define SYS_WRITE 1
 #define SYS_CLOSE 3
 #define SYS_FSTAT 5
 #define SYS_MMAP 9
+#define SYS_MUNMAP 11
 #define SYS_GETPID 39
 #define SYS_SOCKETPAIR 53
 #define SYS_CLONE 56
@@ -82,7 +85,10 @@
 /* ---------------- 常量（避免依赖可能被篡改的头文件） ---------------- */
 #define RASP_AT_FDCWD (-100)
 #define RASP_O_RDONLY 0
+#define RASP_O_WRONLY 1
 #define RASP_O_RDWR 2
+#define RASP_O_CREAT 0100
+#define RASP_O_TRUNC 01000
 #define RASP_O_CLOEXEC 02000000
 #define RASP_O_NONBLOCK 04000
 #define RASP_O_DIRECTORY 0200000
@@ -329,6 +335,7 @@ struct rasp_dirent64 {
 int rasp_raw_open(const char *path, int flags, int mode);
 int rasp_raw_openat(int dirfd, const char *path, int flags, int mode);
 long rasp_raw_read(int fd, void *buf, size_t count);
+long rasp_raw_write(int fd, const void *buf, size_t count);
 int rasp_raw_close(int fd);
 long rasp_raw_getdents64(int fd, void *buf, size_t count);
 long rasp_raw_readlinkat(int dirfd, const char *path, char *buf, size_t bufsiz);
@@ -338,6 +345,7 @@ long rasp_raw_clone3(struct rasp_clone_args *args, size_t size);
 long rasp_raw_clone(unsigned long flags, void *child_stack);
 int rasp_raw_memfd_create(const char *name, unsigned int flags);
 void *rasp_raw_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off);
+int rasp_raw_munmap(void *addr, size_t len);
 long rasp_raw_wait4(pid_t pid, int *status, int options, void *rusage);
 int rasp_raw_kill(pid_t pid, int sig);
 void rasp_raw_exit_group(int code);

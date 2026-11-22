@@ -132,7 +132,7 @@ static int json_flag(const char *json, const char *key, int def)
 }
 
 static jstring jni_run_detect(JNIEnv *env, jclass clazz, jstring config, jstring whitelist,
-                             jstring weights, jobject sink)
+                             jstring weights, jstring stage_dir, jobject sink)
 {
     (void)clazz;
     g_cancel = 0;
@@ -146,6 +146,18 @@ static jstring jni_run_detect(JNIEnv *env, jclass clazz, jstring config, jstring
     ctx.sandbox_enabled = 1;
     ctx.whitelist_enabled = 1;
     ctx.probe_ready = 0;
+
+    if (stage_dir != NULL) {
+        const char *sd = (*env)->GetStringUTFChars(env, stage_dir, NULL);
+        if (sd != NULL) {
+            snprintf(ctx.stage_dir, sizeof(ctx.stage_dir), "%s", sd);
+            (*env)->ReleaseStringUTFChars(env, stage_dir, sd);
+        }
+    }
+
+    /* 兼容性探测必须最先执行：决定 pidfd_open / openat2 是否可用 */
+    rasp_stage(&ctx, "probe");
+    rasp_probe_compat(&ctx);
 
     const char *cfg = config ? (*env)->GetStringUTFChars(env, config, NULL) : NULL;
     if (cfg != NULL) {
@@ -203,16 +215,43 @@ static jstring jni_run_detect(JNIEnv *env, jclass clazz, jstring config, jstring
     pthread_mutex_unlock(&g_lock);
 
     /* 分级调度：低开销项全量，高开销项仅在非 fast 模式执行 */
+    rasp_stage(&ctx, "mount");
     rasp_check_mount(&ctx);
-    if (!rasp_cancelled()) rasp_check_ksu(&ctx);
-    if (!rasp_cancelled()) rasp_check_kernel_trace(&ctx);
-    if (!rasp_cancelled()) rasp_check_bpf(&ctx);
-    if (!rasp_cancelled()) rasp_check_zygisk(&ctx);
-    if (!rasp_cancelled()) rasp_check_inject(&ctx);
-    if (!rasp_cancelled()) rasp_check_security(&ctx);
-    if (!rasp_cancelled()) rasp_check_extra(&ctx);
-    if (!rasp_cancelled() && ctx.sandbox_enabled) rasp_check_sandbox(&ctx);
+    if (!rasp_cancelled()) {
+        rasp_stage(&ctx, "ksu");
+        rasp_check_ksu(&ctx);
+    }
+    if (!rasp_cancelled()) {
+        rasp_stage(&ctx, "kernel");
+        rasp_check_kernel_trace(&ctx);
+    }
+    if (!rasp_cancelled()) {
+        rasp_stage(&ctx, "bpf");
+        rasp_check_bpf(&ctx);
+    }
+    if (!rasp_cancelled()) {
+        rasp_stage(&ctx, "zygisk");
+        rasp_check_zygisk(&ctx);
+    }
+    if (!rasp_cancelled()) {
+        rasp_stage(&ctx, "inject");
+        rasp_check_inject(&ctx);
+    }
+    if (!rasp_cancelled()) {
+        rasp_stage(&ctx, "security");
+        rasp_check_security(&ctx);
+    }
+    if (!rasp_cancelled()) {
+        rasp_stage(&ctx, "extra");
+        rasp_check_extra(&ctx);
+    }
+    if (!rasp_cancelled() && ctx.sandbox_enabled) {
+        rasp_stage(&ctx, "sandbox");
+        rasp_check_sandbox(&ctx);
+    }
+    rasp_stage(&ctx, "antihook");
     rasp_check_antihook(&ctx);
+    rasp_stage(&ctx, "done");
 
     static char report[256 * 1024];
     rasp_build_report_json(&ctx, report, sizeof(report));
@@ -246,7 +285,7 @@ static void jni_cancel(JNIEnv *env, jclass clazz)
 static jstring jni_version(JNIEnv *env, jclass clazz)
 {
     (void)clazz;
-    return (*env)->NewStringUTF(env, "aegis-rasp/1.0.1 (native, api35)");
+    return (*env)->NewStringUTF(env, "aegis-rasp/2.0.0-beta (native, api36)");
 }
 
 /* 供 Java 层做「属性区双路径一致性」比对（ZYS-008）：直接读属性区，不经过 Java SystemProperties */
@@ -265,7 +304,7 @@ static jstring jni_read_property(JNIEnv *env, jclass clazz, jstring key)
 /* ------------------------------------------------------------------ 注册 */
 
 static const JNINativeMethod g_methods[] = {
-    {"runDetect", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/rasp/detect/RaspNative$EvidenceSink;)Ljava/lang/String;",
+    {"runDetect", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/rasp/detect/RaspNative$EvidenceSink;)Ljava/lang/String;",
      (void *)jni_run_detect},
     {"submitEvidence", "(Ljava/lang/String;)V", (void *)jni_submit},
     {"cancelDetect", "()V", (void *)jni_cancel},
